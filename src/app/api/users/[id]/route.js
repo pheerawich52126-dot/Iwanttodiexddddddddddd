@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import db from "../../../lib/db";
 
-// Mock Data ข้อมูลผู้ใช้จำลอง (แชร์ก้อนข้อมูลร่วมกันในเซิร์ฟเวอร์)
+// Mock Data ข้อมูลผู้ใช้จำลอง (คงไว้สำหรับฟังก์ชัน PUT และ DELETE)
 if (!globalThis.users) {
   globalThis.users = [
     { id: "1", name: "สมชาย สายลม", email: "somchai@example.com", role: "admin" },
@@ -23,42 +24,45 @@ async function parseBody(request) {
 
 //================================================================================
 // 1. GET By ID (/src/app/api/users/[id]/route.js)
-// หน้าที่: ดึงข้อมูลผู้ใช้เฉพาะคนตาม ID
+// หน้าที่: ดึงข้อมูลผู้ใช้เฉพาะคนจากตาราง tbl_members ใน MySQL
 // URL: GET /api/users/[id]
 //================================================================================
-export async function GET(request, { params }) {
+export async function GET(request, context) {
   try {
-    const { id } = await params;
+    // ใน Next.js รุ่นใหม่ params เป็น Promise จึงต้อง await ก่อน
+    const { id } = await context.params;
 
-    const user = users.find((u) => u.id === id);
-
-    if (!user) {
+    // ตรวจสอบว่า id เป็นตัวเลขจำนวนเต็มบวก
+    const userId = Number(id);
+    if (!Number.isInteger(userId) || userId <= 0) {
       return NextResponse.json(
-        {
-          success: false,
-          message: `ไม่พบผู้ใช้ ID: ${id}`,
-        },
+        { status: "error", message: "Invalid user ID" },
+        { status: 400 }
+      );
+    }
+
+    // ดึงข้อมูลผู้ใช้จากตาราง tbl_members ตาม ID ที่ระบุ
+    const [rows] = await db.query(
+      "SELECT * FROM tbl_members WHERE id = ? LIMIT 1",
+      [userId]
+    );
+
+    // หากไม่พบข้อมูลในตาราง
+    if (rows.length === 0) {
+      return NextResponse.json(
+        { status: "error", message: "User not found" },
         { status: 404 }
       );
     }
 
-    console.log({ success: true, message: `ดึงข้อมูลผู้ใช้ ID: ${id} สำเร็จ`, status: 200 });
-
+    return NextResponse.json({
+      status: "ok",
+      data: rows[0],
+    });
+  } catch (err) {
+    console.error("Database query error:", err);
     return NextResponse.json(
-      {
-        success: true,
-        message: `ดึงข้อมูลผู้ใช้ ID: ${id} สำเร็จ`,
-        data: user,
-      },
-      { status: 200 }
-    );
-  } catch (error) {
-    return NextResponse.json(
-      {
-        success: false,
-        message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์",
-        error: error instanceof Error ? error.message : "Internal Server Error",
-      },
+      { error: "Database error", details: err.message },
       { status: 500 }
     );
   }
